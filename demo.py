@@ -18,7 +18,7 @@ v2 = f'{srcdir}/{bn2}.mp4'
 r1 = f'{srcdir}/{bn1}.face_rects'
 r2 = f'{srcdir}/{bn2}.face_rects'
 
-model_bn = 'cnn1d-v2-w30'
+model_bn = 'cnn1d-w30'
 
 outpath = f'{dstdir}/CNN_{model_bn}.mp4'
 
