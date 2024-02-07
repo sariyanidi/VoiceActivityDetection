@@ -49,7 +49,7 @@ vi2 = args.vid2_path
 rects1_path = args.rects1_path
 rects2_path = args.rects2_path
 
-w = torch.load(args.model_fpath)['model_params']['w']
+w = torch.load(args.model_fpath, map_location=torch.device('cpu'))['model_params']['w']
 bn_model = '.'.join(os.path.basename(args.model_fpath).split('.')[:-1])
 
 pos_str1 = ''
@@ -67,10 +67,13 @@ if args.mode == 'convolve':
 vo1 = f'./tmp1{os.path.basename(vi1)}.mp4'
 vo2 = f'./tmp2{os.path.basename(vi2)}.mp4'
 
+to1 = f'./{os.path.basename(vi1)}.txt'
+to2 = f'./{os.path.basename(vi2)}.txt'
+
 cmd1 = f'python VAD.py --file_lmks={l1} --file_video_in={vi1} --file_video_out={vo1} --model_file={args.model_fpath}'\
-    f' --convolve_rate={args.convolve_rate} --mode={args.mode} {pos_str1}'
+    f' --convolve_rate={args.convolve_rate} --mode={args.mode} {pos_str1} --file_txt_out={to1}'
 cmd2 = f'python VAD.py --file_lmks={l2} --file_video_in={vi2} --file_video_out={vo2} --model_file={args.model_fpath}'\
-    f' --convolve_rate={args.convolve_rate} --mode={args.mode} {pos_str2}'
+    f' --convolve_rate={args.convolve_rate} --mode={args.mode} {pos_str2} --file_txt_out={to2}'
 cmdc = f'ffmpeg -i {vo1} -i {vo2} -filter_complex hstack=inputs=2 {args.video_out_path}'
 
 if not os.path.exists(args.video_out_path):

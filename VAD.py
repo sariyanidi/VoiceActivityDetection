@@ -9,27 +9,39 @@ import os
 import torch
 import scipy.signal
 torch.manual_seed(1957)
+from time import time
+
 
 import argparse
 import numpy as np
+from sys import exit
 from utils import compute_features_from_lmks, CNN_VAD
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--file_lmks', type=str, required=True)
+parser.add_argument('--file_txt_out', type=str, required=True)
+parser.add_argument('--file_video_in', type=str, required=False, default=None)
+parser.add_argument('--file_video_out', type=str, required=False, default=None)
 parser.add_argument('--device', type=str, default='cpu')
 parser.add_argument('--mode', type=str, default='convolve')
 parser.add_argument('--model_file', type=str, default='./models/cnn1d-w30.pth')
 parser.add_argument('--convolve_rate', type=float, default=0.4)
-parser.add_argument('--file_lmks', type=str, default='/offline_data/face/demo/output/BFMmm-19830.cfg9.global4/ML0001_1.canonical_lmks')
-parser.add_argument('--file_video_in', type=str, default='/offline_data/face/demo/CNN/ML0001_1.mp4')
-parser.add_argument('--file_video_out', type=str, default='/offline_data/face/demo/output/VAD/ML0001_1_VAD-convolve-cnn1d-w30-1.2.mp4')
 parser.add_argument('--xlabel', type=int, default=-1)
 parser.add_argument('--ylabel', type=int, default=-1)
 
 args = parser.parse_args()
 
+if os.path.exists(args.file_txt_out):
+    print(f'Skipping because the output file already exisits: {args.file_txt_out}')
+    exit(0)
+
+if not os.path.exists(os.path.dirname(args.file_txt_out)):
+    print(f'Skipping because output directory does not exist at {os.path.dirname(args.file_txt_out)}')
+    exit(1)
+
 args.use_std = 0
 model_type = os.path.basename(args.model_file).split('-')[0]
-checkpoint = torch.load(f'{args.model_file}')
+checkpoint = torch.load(f'{args.model_file}', map_location=torch.device('cpu'))
 mp = checkpoint['model_params']
 
 args.use_all_lmks = mp['use_all_lmks']
@@ -77,6 +89,9 @@ elif args.mode == 'convolve':
     f = np.ones((args.w,))
     s = np.convolve(y,f)
 
+Nframes = s.shape[0]
+
+
 def add_label(img, text,
           pos=(100, 920),
           font=cv2.FONT_HERSHEY_PLAIN,
@@ -101,39 +116,52 @@ def add_label(img, text,
 
     return text_size
 
-# Read the video file
-video_capture = cv2.VideoCapture(args.file_video_in)
 
-# Check if the video file was opened successfully
-if not video_capture.isOpened():
-    print("Error: Could not open video file.")
-    exit()
 
-# Get the video's frame width, height, and frames per second
-frame_width = int(video_capture.get(3))
-frame_height = int(video_capture.get(4))
-fps = int(video_capture.get(5))
+write_output_video = (args.file_video_in is not None) and (args.file_video_out is not None)
 
-# Define the codec and create a VideoWriter object
-fourcc = cv2.VideoWriter_fourcc(*'XVID')
-output_video = cv2.VideoWriter(args.file_video_out+'.avi', fourcc, fps, (frame_width, frame_height))
+if write_output_video:
+    # Read the video file
+    video_capture = cv2.VideoCapture(args.file_video_in)
+
+    # Check if the video file was opened successfully
+    if not video_capture.isOpened():
+        print("Error: Could not open video file.")
+        exit()
+    
+    # Get the video's frame width, height, and frames per second
+    frame_width = int(video_capture.get(3))
+    frame_height = int(video_capture.get(4))
+    fps = int(video_capture.get(5))
+    
+    # Define the codec and create a VideoWriter object
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    output_video = cv2.VideoWriter(args.file_video_out+'.avi', fourcc, fps, (frame_width, frame_height))
 
 
 #%%
 
 
 ix = 0
-while True:
-    ret, frame = video_capture.read()
+output = []
+for frame_id in range(Nframes):
+    # while True:
+    if write_output_video:
+        ret, frame = video_capture.read()
 
-    if not ret:
-        break
-
+        if not ret:
+            break
+    
     label = ''
+    is_speaking = (args.mode == 'direct' and s[frame_id] == 1) or (args.mode == 'convolve' and s[frame_id] > args.convolve_rate*args.w)
+    
+    output.append(int(is_speaking))
+    
+    if not write_output_video:
+        continue
     
     if ix < len(s):
-        
-        if (args.mode == 'direct' and s[ix] == 1) or (args.mode == 'convolve' and s[ix] > args.convolve_rate*args.w):
+        if is_speaking:
             label = 'SPEAKING'
         else:
             label = 'SILENT'
@@ -155,18 +183,20 @@ while True:
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
     """
-    ix += 1
+
+
+
+np.savetxt(args.file_txt_out, output, fmt='%d')
+
+if write_output_video:
+    # Release the video capture object and close the display window
+    video_capture.release()
+    cv2.destroyAllWindows()
+    output_video.release()
     
-
-# Release the video capture object and close the display window
-video_capture.release()
-cv2.destroyAllWindows()
-output_video.release()
-
-os.system('ffmpeg -i %s.avi %s 2> /dev/null' % (args.file_video_out, args.file_video_out))
-os.system('rm %s.avi' % args.file_video_out)
-
-
+    os.system('ffmpeg -i %s.avi %s 2> /dev/null' % (args.file_video_out, args.file_video_out))
+    os.system('rm %s.avi' % args.file_video_out)
+    
 
 
 
